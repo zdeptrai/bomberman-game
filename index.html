@@ -383,7 +383,13 @@
 
         // Xử lý các phím di chuyển và đặt bom
         async function handleKeydown(e) {
-            if (!isGameRunning) return;
+            console.log("Phím được nhấn:", e.key);
+            console.log("Trạng thái game:", isGameRunning);
+
+            if (!isGameRunning) {
+                console.log("Trò chơi chưa bắt đầu, bỏ qua phím nhấn.");
+                return;
+            }
 
             const players = gameData.players;
             let updated = false;
@@ -460,7 +466,7 @@
         // Đặt bom
         function placeBomb(x, y, playerNumber) {
             if (gameData.map[y][x] === EMPTY) {
-                bombSynth.triggerAttackRelease('C4', '8n');
+                if (bombSynth) bombSynth.triggerAttackRelease('C4', '8n');
                 gameData.map[y][x] = BOMB;
                 updateUI();
                 
@@ -476,7 +482,7 @@
             const { map, players } = gameData;
             const blastRange = players[playerNumber].blastRange || 1;
             
-            explosionSynth.triggerAttackRelease('8n');
+            if (explosionSynth) explosionSynth.triggerAttackRelease('8n');
             
             const affectedCells = [{ x: bombX, y: bombY }];
             map[bombY][bombX] = EXPLOSION;
@@ -554,6 +560,7 @@
                 noise: { type: 'pink' },
                 envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.05 }
             }).toDestination();
+            console.log("Đã khởi tạo âm thanh.");
 
             const randomMap = maps[Math.floor(Math.random() * maps.length)];
 
@@ -572,6 +579,7 @@
             
             createGameBoard();
             isGameRunning = true;
+            console.log("Trò chơi đã bắt đầu. isGameRunning =", isGameRunning);
             updateUI();
         }
 
