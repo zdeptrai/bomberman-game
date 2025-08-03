@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trò Chơi Đặt Bom</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            background-color: #1a202c;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        #game-board {
+            display: grid;
+            border: 2px solid #a0aec0;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            background-color: #2d3748;
+            border-radius: 8px;
+        }
+
+        .cell {
+            width: 40px;
+            height: 40px;
+            background-color: #2d3748;
+            border: 1px solid #4a5568;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .cell.wall {
+            background-color: #4a5568;
+            border-color: #2d3748;
+        }
+        .cell.destructible {
+            background-color: #a78bfa;
+            border: 1px solid #7c3aed;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23a78bfa" /><path d="M0,0 L40,40 M0,40 L40,0" stroke="%237c3aed" stroke-width="2"/></svg>');
+            background-size: cover;
+        }
+        .cell.powerup {
+            background-color: #48bb78;
+            position: relative;
+            animation: pulse 1s infinite;
+        }
+        .cell.powerup.speed::before {
+            content: '⚡️';
+            font-size: 24px;
+        }
+        .cell.powerup.blast::before {
+            content: '💥';
+            font-size: 24px;
+        }
+        .cell.explosion {
+            background-color: #f56565;
+            animation: explode 0.5s ease-in-out;
+            border: none;
+        }
+        .cell.player-1 {
+            background-color: #63b3ed;
+            border: 2px solid #4299e1;
+            border-radius: 50%;
+        }
+        .cell.player-2 {
+            background-color: #f6ad55;
+            border: 2px solid #ed8936;
+            border-radius: 50%;
+        }
+        .cell.bomb {
+            background-color: #e53e3e;
+            border: 2px solid #c53030;
+            position: relative;
+            border-radius: 50%;
+            animation: bomb-timer 1s infinite;
+        }
+        
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #2d3748;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            text-align: center;
+            border: 2px solid #4a5568;
+            display: none;
+        }
+        .message-box button {
+            margin-top: 1rem;
+            font-weight: bold;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(0.9); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(0.9); }
+        }
+        @keyframes explode {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.8; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        @keyframes bomb-timer {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex flex-col items-center p-4">
+    <div class="container bg-gray-800 p-8 rounded-lg shadow-xl">
+        <h1 class="text-4xl font-bold mb-4 text-purple-400">Trò Chơi Đặt Bom</h1>
+        <h2 class="text-lg mb-2">ID của bạn: <span id="userIdDisplay" class="font-bold text-yellow-300">Đang tải...</span></h2>
+        
+        <div id="lobby" class="flex flex-col items-center">
+            <button id="createGameBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200">Tạo Phòng Mới</button>
+            <p class="my-4">hoặc</p>
+            <div class="flex items-center space-x-2">
+                <input type="text" id="gameIdInput" placeholder="Nhập ID phòng" class="p-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <button id="joinGameBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-full transition-colors duration-200">Tham Gia</button>
+            </div>
+        </div>
+        
+        <div id="game-container" class="hidden flex flex-col items-center mt-8 w-full">
+            <h2 id="gameStatus" class="text-2xl font-bold mb-4 text-center">Đang chờ người chơi...</h2>
+            
+            <div class="w-full flex justify-between items-start mb-4">
+                <!-- Thông tin người chơi 1 -->
+                <div id="player1Status" class="flex-1 p-3 bg-gray-700 rounded-lg mr-2">
+                    <p class="font-bold text-lg text-blue-400">Người chơi 1 (Xanh)</p>
+                    <p class="text-sm">Tốc độ: <span id="player1-speed">1</span></p>
+                    <p class="text-sm">Phạm vi nổ: <span id="player1-blast">1</span></p>
+                </div>
+                
+                <!-- Thông tin người chơi 2 -->
+                <div id="player2Status" class="flex-1 p-3 bg-gray-700 rounded-lg ml-2">
+                    <p class="font-bold text-lg text-yellow-400">Người chơi 2 (Vàng)</p>
+                    <p class="text-sm">Tốc độ: <span id="player2-speed">1</span></p>
+                    <p class="text-sm">Phạm vi nổ: <span id="player2-blast">1</span></p>
+                </div>
+            </div>
+
+            <div id="game-board-wrapper" class="flex justify-center items-center">
+                <div id="game-board"></div>
+            </div>
+        </div>
+
+        <!-- Hộp thông báo tùy chỉnh -->
+        <div id="messageBox" class="message-box hidden">
+            <h2 id="messageTitle" class="text-3xl font-bold text-purple-400"></h2>
+            <p id="messageText" class="mt-2 text-lg"></p>
+            <button id="messageButton" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full">Chơi lại</button>
+        </div>
+    </div>
+    
+    <script type="module">
+        // Import các thư viện Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Biến toàn cục từ Canvas (được cung cấp tự động)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+        
+        // Khởi tạo Firebase
+        let app, db, auth, userId;
+        const initFirebase = async () => {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('userIdDisplay').textContent = userId;
+                        console.log('Firebase initialized and authenticated. User ID:', userId);
+                    } else {
+                        console.error("Không có người dùng nào đăng nhập.");
+                    }
+                });
+            } catch (error) {
+                console.error("Lỗi khi khởi tạo Firebase:", error);
+            }
+        };
+
+        // Kích thước bản đồ
+        const MAP_SIZE = 15;
+        const CELL_SIZE = 40;
+        
+        // Loại ô trên bản đồ
+        const WALL = 'W';
+        const DESTRUCTIBLE = 'D';
+        const EMPTY = 'E';
+        const POWERUP_SPEED = 'PS';
+        const POWERUP_BLAST = 'PB';
+        const BOMB = 'B';
+        const EXPLOSION = 'X';
+
+        // Biến trạng thái trò chơi
+        let gameId = '';
+        let playerNumber = 0; // Số thứ tự người chơi (1 hoặc 2)
+        let gameRef = null;
+        let gameData = {};
+        
+        let bombSynth = new Tone.MembraneSynth().toDestination();
+        let explosionSynth = new Tone.NoiseSynth({
+            noise: { type: 'pink' },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.05 }
+        }).toDestination();
+        
+        // Các bản đồ được tạo sẵn
+        const maps = [
+            // Bản đồ 1
+            [
+                'W W W W W W W W W W W W W W W',
+                'W E D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W W W W W W W W W W W W W W W',
+            ].map(row => row.split(' ')),
+            // Bản đồ 2
+            [
+                'W W W W W W W W W W W W W W W',
+                'W E D D W D D W D D W D D E W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W W W D W D W D W D W D W W W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W W W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W D D D D D D D D D D D D D W',
+                'W W W D W D W D W D W D W W W',
+                'W D D D D D D D D D D D D D W',
+                'W D W D W D W D W D W D W D W',
+                'W E D D W D D W D D W D D E W',
+                'W W W W W W W W W W W W W W W',
+            ].map(row => row.split(' ')),
+        ];
+
+        // Vị trí bắt đầu của người chơi
+        const playerStartPositions = {
+            1: { x: 1, y: 1 },
+            2: { x: MAP_SIZE - 2, y: MAP_SIZE - 2 }
+        };
+
+        // Hàm tạo bảng game
+        function createGameBoard() {
+            const gameBoard = document.getElementById('game-board');
+            gameBoard.innerHTML = '';
+            gameBoard.style.gridTemplateColumns = `repeat(${MAP_SIZE}, ${CELL_SIZE}px)`;
+
+            for (let y = 0; y < MAP_SIZE; y++) {
+                for (let x = 0; x < MAP_SIZE; x++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    gameBoard.appendChild(cell);
+                }
+            }
+        }
+
+        // Cập nhật giao diện dựa trên dữ liệu game từ Firestore
+        function updateUI() {
+            const { map, players, turn, gameState } = gameData;
+            
+            // Cập nhật trạng thái game và người chơi
+            const gameStatusEl = document.getElementById('gameStatus');
+            const player1Status = document.getElementById('player1-speed');
+            const player1Blast = document.getElementById('player1-blast');
+            const player2Status = document.getElementById('player2-speed');
+            const player2Blast = document.getElementById('player2-blast');
+            
+            if (gameState === 'waiting') {
+                gameStatusEl.textContent = "Đang chờ người chơi khác tham gia...";
+            } else if (gameState === 'playing') {
+                gameStatusEl.textContent = (turn === playerNumber) ? 'Đến lượt bạn!' : 'Đang chờ đối thủ...';
+            } else if (gameState === 'win') {
+                const winner = gameData.winner;
+                if (winner === playerNumber) {
+                    showMessage('Bạn Đã Thắng!', 'Chúc mừng bạn đã đánh bại đối thủ!');
+                } else {
+                    showMessage('Bạn Đã Thua!', 'Bạn đã bị đối thủ đánh bại.');
+                }
+                document.removeEventListener('keydown', handleKeydown);
+                return;
+            } else if (gameState === 'draw') {
+                showMessage('Hòa!', 'Không còn ai chiến thắng.');
+                document.removeEventListener('keydown', handleKeydown);
+                return;
+            }
+            
+            if (players[1]) {
+                player1Status.textContent = players[1].speed;
+                player1Blast.textContent = players[1].blastRange;
+            } else {
+                player1Status.textContent = 'Đã thua';
+                player1Blast.textContent = 'Đã thua';
+            }
+            
+            if (players[2]) {
+                player2Status.textContent = players[2].speed;
+                player2Blast.textContent = players[2].blastRange;
+            } else {
+                player2Status.textContent = 'Đã thua';
+                player2Blast.textContent = 'Đã thua';
+            }
+
+
+            // Vẽ lại bản đồ
+            for (let y = 0; y < MAP_SIZE; y++) {
+                for (let x = 0; x < MAP_SIZE; x++) {
+                    const cell = document.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+                    cell.className = 'cell'; // Đặt lại lớp CSS
+
+                    const cellType = map[y][x];
+                    if (cellType === WALL) {
+                        cell.classList.add('wall');
+                    } else if (cellType === DESTRUCTIBLE) {
+                        cell.classList.add('destructible');
+                    } else if (cellType === POWERUP_SPEED) {
+                        cell.classList.add('powerup', 'speed');
+                    } else if (cellType === POWERUP_BLAST) {
+                        cell.classList.add('powerup', 'blast');
+                    } else if (cellType === BOMB) {
+                        cell.classList.add('bomb');
+                    } else if (cellType === EXPLOSION) {
+                        cell.classList.add('explosion');
+                    }
+
+                    // Vẽ người chơi
+                    if (players['1'] && players['1'].x === x && players['1'].y === y) {
+                        cell.classList.add('player-1');
+                    }
+                    if (players['2'] && players['2'].x === x && players['2'].y === y) {
+                        cell.classList.add('player-2');
+                    }
+                }
+            }
+        }
+
+        // Xử lý các phím di chuyển
+        async function handleKeydown(e) {
+            if (gameData.gameState !== 'playing' || gameData.turn !== playerNumber) return;
+
+            const player = gameData.players[playerNumber];
+            let newPos = { ...player };
+            let updated = false;
+
+            const moveSpeed = player.speed || 1;
+
+            switch (e.key) {
+                case 'ArrowUp':
+                    newPos.y -= moveSpeed;
+                    updated = true;
+                    break;
+                case 'ArrowDown':
+                    newPos.y += moveSpeed;
+                    updated = true;
+                    break;
+                case 'ArrowLeft':
+                    newPos.x -= moveSpeed;
+                    updated = true;
+                    break;
+                case 'ArrowRight':
+                    newPos.x += moveSpeed;
+                    updated = true;
+                    break;
+                case ' ': // Phím cách để đặt bom
+                    placeBomb(player.x, player.y);
+                    return;
+            }
+
+            if (updated) {
+                if (isValidMove(newPos)) {
+                    await updatePlayerPosition(newPos);
+                    checkPowerup(newPos);
+                    await nextTurn();
+                }
+            }
+        }
+        
+        // Kiểm tra di chuyển hợp lệ
+        function isValidMove(newPos) {
+            if (newPos.x < 0 || newPos.x >= MAP_SIZE || newPos.y < 0 || newPos.y >= MAP_SIZE) {
+                return false;
+            }
+            const cellType = gameData.map[newPos.y][newPos.x];
+            return cellType === EMPTY || cellType.startsWith('P');
+        }
+
+        // Kiểm tra và nhặt power-up
+        async function checkPowerup(pos) {
+            const cellType = gameData.map[pos.y][pos.x];
+            if (cellType === EMPTY || !cellType.startsWith('P')) return;
+
+            const map = JSON.parse(JSON.stringify(gameData.map));
+            map[pos.y][pos.x] = EMPTY;
+            
+            const players = { ...gameData.players };
+            const player = players[playerNumber];
+            
+            if (cellType === POWERUP_SPEED) {
+                player.speed = (player.speed || 1) + 1;
+            } else if (cellType === POWERUP_BLAST) {
+                player.blastRange = (player.blastRange || 1) + 1;
+            }
+            
+            await setDoc(gameRef, { map, players }, { merge: true });
+        }
+
+        // Cập nhật vị trí người chơi lên Firestore
+        async function updatePlayerPosition(newPos) {
+            const players = { ...gameData.players };
+            players[playerNumber].x = newPos.x;
+            players[playerNumber].y = newPos.y;
+            try {
+                await setDoc(gameRef, { players: players }, { merge: true });
+            } catch (error) {
+                console.error("Lỗi cập nhật vị trí người chơi:", error);
+            }
+        }
+        
+        // Chuyển lượt chơi
+        async function nextTurn() {
+            const nextPlayer = playerNumber === 1 ? 2 : 1;
+            try {
+                await setDoc(gameRef, { turn: nextPlayer }, { merge: true });
+            } catch (error) {
+                console.error("Lỗi chuyển lượt chơi:", error);
+            }
+        }
+        
+        // Đặt bom
+        async function placeBomb(x, y) {
+            const map = JSON.parse(JSON.stringify(gameData.map));
+            if (map[y][x] === EMPTY) {
+                bombSynth.triggerAttackRelease('C4', '8n');
+                map[y][x] = BOMB;
+                await setDoc(gameRef, { map: map }, { merge: true });
+                
+                // Hẹn giờ bom nổ
+                setTimeout(async () => {
+                    await explodeBomb(x, y);
+                }, 2000);
+            }
+        }
+        
+        // Bom nổ
+        async function explodeBomb(bombX, bombY) {
+            const { map, players } = gameData;
+            const blastRange = players[playerNumber].blastRange || 1;
+            const newMap = JSON.parse(JSON.stringify(map));
+            
+            explosionSynth.triggerAttackRelease('8n');
+            
+            const affectedCells = [{ x: bombX, y: bombY }];
+            newMap[bombY][bombX] = EXPLOSION;
+            
+            const directions = [{dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1}];
+            directions.forEach(dir => {
+                for (let i = 1; i <= blastRange; i++) {
+                    const newX = bombX + dir.dx * i;
+                    const newY = bombY + dir.dy * i;
+                    
+                    if (newX >= 0 && newX < MAP_SIZE && newY >= 0 && newY < MAP_SIZE) {
+                        const cellType = map[newY][newX];
+                        if (cellType === WALL) break;
+                        
+                        if (cellType === DESTRUCTIBLE) {
+                            newMap[newY][newX] = Math.random() < 0.3 ? (Math.random() < 0.5 ? POWERUP_SPEED : POWERUP_BLAST) : EMPTY;
+                            affectedCells.push({x: newX, y: newY});
+                            break;
+                        }
+                        
+                        newMap[newY][newX] = EXPLOSION;
+                        affectedCells.push({x: newX, y: newY});
+                    }
+                }
+            });
+
+            await setDoc(gameRef, { map: newMap }, { merge: true });
+
+            // Kiểm tra người chơi bị dính bom
+            const playersKilled = Object.keys(players).filter(pNum => 
+                affectedCells.some(cell => players[pNum] && cell.x === players[pNum].x && cell.y === players[pNum].y)
+            );
+            
+            // Xóa vùng nổ và cập nhật trạng thái người chơi
+            setTimeout(async () => {
+                const finalMap = JSON.parse(JSON.stringify(gameData.map));
+                affectedCells.forEach(cell => {
+                    finalMap[cell.y][cell.x] = EMPTY;
+                });
+                
+                let finalPlayers = {...gameData.players};
+                playersKilled.forEach(pNum => {
+                    delete finalPlayers[pNum];
+                });
+                
+                await setDoc(gameRef, { map: finalMap, players: finalPlayers }, { merge: true });
+                checkGameOver();
+            }, 500);
+        }
+        
+        // Kiểm tra điều kiện thắng/thua
+        async function checkGameOver() {
+            const livingPlayers = Object.keys(gameData.players);
+            if (livingPlayers.length <= 1) {
+                if (livingPlayers.length === 1) {
+                    await setDoc(gameRef, { gameState: 'win', winner: parseInt(livingPlayers[0]) }, { merge: true });
+                } else {
+                    await setDoc(gameRef, { gameState: 'draw' }, { merge: true });
+                }
+            } else {
+                await nextTurn();
+            }
+        }
+        
+        // Hiển thị thông báo
+        function showMessage(title, text) {
+            document.getElementById('messageTitle').textContent = title;
+            document.getElementById('messageText').textContent = text;
+            document.getElementById('messageBox').classList.remove('hidden');
+        }
+
+        // Bắt đầu game mới hoặc tham gia
+        document.getElementById('createGameBtn').addEventListener('click', async () => {
+            if (!userId) {
+                console.error("User ID không có sẵn.");
+                return;
+            }
+            gameId = userId;
+            gameRef = doc(db, 'artifacts', appId, 'public/data', `games/${gameId}`);
+            
+            playerNumber = 1;
+            
+            const randomMap = maps[Math.floor(Math.random() * maps.length)];
+
+            const initialGameData = {
+                map: randomMap,
+                players: {
+                    1: { ...playerStartPositions[1], speed: 1, blastRange: 1 }
+                },
+                turn: 1,
+                gameState: 'waiting'
+            };
+            
+            try {
+                await setDoc(gameRef, initialGameData);
+                console.log("Game created with ID:", gameId);
+                setupGameListener();
+                startGameUI();
+            } catch (error) {
+                console.error("Lỗi khi tạo game:", error);
+            }
+        });
+
+        document.getElementById('joinGameBtn').addEventListener('click', async () => {
+            const inputGameId = document.getElementById('gameIdInput').value;
+            if (!inputGameId || !userId) return;
+
+            gameId = inputGameId;
+            gameRef = doc(db, 'artifacts', appId, 'public/data', `games/${gameId}`);
+            
+            const gameSnap = await getDoc(gameRef);
+            if (gameSnap.exists() && !gameSnap.data().players[2]) {
+                playerNumber = 2;
+                await setDoc(gameRef, { players: { ...gameSnap.data().players, 2: { ...playerStartPositions[2], speed: 1, blastRange: 1 } }, gameState: 'playing' }, { merge: true });
+                console.log("Joined game:", gameId);
+                setupGameListener();
+                startGameUI();
+            } else {
+                showMessage("Lỗi!", "Game không tồn tại hoặc đã đầy.");
+            }
+        });
+
+        // Thiết lập lắng nghe Firestore
+        function setupGameListener() {
+            onSnapshot(gameRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    gameData = docSnap.data();
+                    updateUI();
+                }
+            });
+        }
+        
+        // Khởi động UI trò chơi
+        function startGameUI() {
+            document.getElementById('lobby').classList.add('hidden');
+            document.getElementById('game-container').classList.remove('hidden');
+            createGameBoard();
+            document.addEventListener('keydown', handleKeydown);
+        }
+
+        // Xử lý nút chơi lại trong hộp thông báo
+        document.getElementById('messageButton').addEventListener('click', () => {
+             location.reload(); // Tải lại trang để bắt đầu game mới
+        });
+
+        // Khởi tạo Firebase khi trang tải
+        window.onload = () => {
+            initFirebase();
+        };
+    </script>
+</body>
+</html>
