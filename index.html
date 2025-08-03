@@ -548,6 +548,13 @@
 
         // Khởi động trò chơi
         function startGame() {
+            // Khởi tạo âm thanh sau khi người dùng tương tác
+            bombSynth = new Tone.MembraneSynth().toDestination();
+            explosionSynth = new Tone.NoiseSynth({
+                noise: { type: 'pink' },
+                envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.05 }
+            }).toDestination();
+
             const randomMap = maps[Math.floor(Math.random() * maps.length)];
 
             gameData = {
@@ -559,12 +566,6 @@
                 turn: 1,
                 gameState: 'playing'
             };
-            
-            bombSynth = new Tone.MembraneSynth().toDestination();
-            explosionSynth = new Tone.NoiseSynth({
-                noise: { type: 'pink' },
-                envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.05 }
-            }).toDestination();
             
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('game-container').classList.remove('hidden');
@@ -580,6 +581,8 @@
         });
         
         document.getElementById('start-game-btn').addEventListener('click', () => {
+            // Bắt đầu context âm thanh
+            Tone.start();
             startGame();
         });
         
